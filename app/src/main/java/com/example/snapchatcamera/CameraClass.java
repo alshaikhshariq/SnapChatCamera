@@ -2,11 +2,15 @@ package com.example.snapchatcamera;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.content.ContentResolver;
+import android.content.ContentUris;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
+import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
@@ -97,6 +101,7 @@ public class CameraClass extends AppCompatActivity
     private String mCurrentPhotoPath;
     private ImageView mImageView;
     private String imageFileName;
+    private Bitmap bitmap;
 
 
 
@@ -120,7 +125,8 @@ public class CameraClass extends AppCompatActivity
             public void onClick(View v)
             {
                 takePicture();
-
+                //Intent intent = new Intent();
+                //intent = startActivity(new Intent(MainActivity.this, MyOtherActivity.class));
             }
         });
 
@@ -305,50 +311,15 @@ public class CameraClass extends AppCompatActivity
             // Orientation
             int rotation = getWindowManager().getDefaultDisplay().getRotation();
             captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, ORIENTATIONS.get(rotation));
-            File root       =   Environment.getExternalStorageDirectory();
-            //imageFile       =   new File(root.getAbsolutePath() + "/Souchlay/media/Souchlay");
-            imageFileName          =   root.getAbsolutePath() + "/Souchlay/" + System.currentTimeMillis() + ".JPEG";
-            MediaScannerConnection.scanFile(this, new String[] { imageFileName }, null, new MediaScannerConnection.OnScanCompletedListener()
-            {
-                public void onScanCompleted(String path, Uri uri)
-                {
-                           /* if(Bitmap.Config.LOG_DEBUG_ENABLED)
-                            {
-                                Log.d(Bitmap.Config.LOGTAG, "scanned : " + path);
-                            }*/
-                }
-            });
 
 
-            /*imageFile = new File (root, "Souchlay/media/Souchlay");
-            if (!imageFile.isDirectory())
-            {
-                imageFile.mkdirs();
-            }
-*/
-            //imageFileName = new File (imageFile, System.currentTimeMillis(), ".jpg");
 
-            /*String path = Environment.getExternalStorageDirectory().toString();
-File dir = new File(path, "/appname/media/app images/");
-if (!dir.isDirectory()) {
-        dir.mkdirs();
-}
+           /* File root       =   Environment.getExternalStorageDirectory();
+            File imagePath = new File(Environment.getExternalStoragePublicDirectory
+           (Environment.DIRECTORY_PICTURES)+ File.separator + appDirectoryName + File.separator);
+            imageFileName          =   root.getAbsolutePath() + "/Souchlay/" + System.currentTimeMillis() + ".JPEG";*/
+           imageFile = createImageFile();
 
-File file = new File(dir, filename + ".jpg");
-String imagePath =  file.getAbsolutePath();
-    //scan the image so show up in album
-MediaScannerConnection.scanFile(this,
-        new String[] { imagePath }, null,
-        new MediaScannerConnection.OnScanCompletedListener() {
-        public void onScanCompleted(String path, Uri uri) {
-        if(Config.LOG_DEBUG_ENABLED) {
-            Log.d(Config.LOGTAG, "scanned : " + path);
-        }
-        }
-});*/
-
-
-            //final File file = new File(Environment.getExternalStorageDirectory() + "/pic.jpg");
             ImageReader.OnImageAvailableListener readerListener = new ImageReader.OnImageAvailableListener()
             {
                 @Override
@@ -382,7 +353,7 @@ MediaScannerConnection.scanFile(this,
                     OutputStream output = null;
                     try
                     {
-                        output = new FileOutputStream(imageFileName);
+                        output = new FileOutputStream(imageFile);
                         output.write(bytes);
                         //saveImage();
                     } finally
@@ -399,7 +370,7 @@ MediaScannerConnection.scanFile(this,
                 @Override
                 public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
                     super.onCaptureCompleted(session, request, result);
-                    Toast.makeText(CameraClass.this, "Saved:" + imageFileName, Toast.LENGTH_SHORT).show();
+                    //Toast.makeText(CameraClass.this, "Saved:" + imageFile, Toast.LENGTH_SHORT).show();
                     createCameraPreview();
                 }
             };
@@ -428,6 +399,120 @@ MediaScannerConnection.scanFile(this,
         }
     }
 
+    public static class CapturePhotoUtils
+    {
+
+        /**
+         * A copy of the Android internals  insertImage method, this method populates the
+         * meta data with DATE_ADDED and DATE_TAKEN. This fixes a common problem where media
+         * that is inserted manually gets saved at the end of the gallery (because date is not populated).
+         * @see android.provider.MediaStore.Images.Media#insertImage(ContentResolver, Bitmap, String, String)
+         */
+
+
+        public static final String insertImage(ContentResolver cr, Bitmap source)
+        {
+
+            ContentValues values = new ContentValues();
+            //values.put(MediaStore.Images.Media.TITLE, title);
+            //values.put(MediaStore.Images.Media.DISPLAY_NAME, title);
+            //values.put(MediaStore.Images.Media.DESCRIPTION, description);
+            values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+            // Add the date meta data to ensure the image is added at the front of the gallery
+            values.put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000);
+            values.put(MediaStore.Images.Media.DATE_TAKEN, System.currentTimeMillis());
+
+            Uri url = null;
+            String stringUrl = null;    /* value to be returned */
+
+            try
+            {
+                url = cr.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+
+                if (source != null)
+                {
+                    OutputStream imageOut = cr.openOutputStream(url);
+                    try
+                    {
+                        source.compress(Bitmap.CompressFormat.JPEG, 50, imageOut);
+                    }
+                    finally
+                    {
+                        imageOut.close();
+                    }
+
+                    long id = ContentUris.parseId(url);
+                    // Wait until MINI_KIND thumbnail is generated.
+                    Bitmap miniThumb = MediaStore.Images.Thumbnails.getThumbnail(cr, id, MediaStore.Images.Thumbnails.MINI_KIND, null);
+                    // This is for backward compatibility.
+                    storeThumbnail(cr, miniThumb, id, 50F, 50F, MediaStore.Images.Thumbnails.MICRO_KIND);
+                }
+                else
+                    {
+                        cr.delete(url, null, null);
+                        url = null;
+                    }
+            }
+            catch (Exception e)
+            {
+                if (url != null)
+                {
+                    cr.delete(url, null, null);
+                    url = null;
+                }
+            }
+
+            if (url != null)
+            {
+                stringUrl = url.toString();
+            }
+
+            return stringUrl;
+        }
+
+        /**
+         * A copy of the Android internals StoreThumbnail method, it used with the insertImage to
+         * populate the android.provider.MediaStore.Images.Media#insertImage with all the correct
+         * meta data. The StoreThumbnail method is private so it must be duplicated here.
+         * @see android.provider.MediaStore.Images.Media (StoreThumbnail private method)
+         */
+        private static final Bitmap storeThumbnail(ContentResolver cr, Bitmap source, long id, float width, float height, int kind)
+        {
+            // create the matrix to scale it
+            Matrix matrix = new Matrix();
+
+
+            float scaleX = width / source.getWidth();
+            float scaleY = height / source.getHeight();
+
+            matrix.setScale(scaleX, scaleY);
+
+            Bitmap thumb = Bitmap.createBitmap(source, 0, 0,
+                    source.getWidth(),
+                    source.getHeight(), matrix,
+                    true
+            );
+
+            ContentValues values = new ContentValues(4);
+            values.put(MediaStore.Images.Thumbnails.KIND,kind);
+            values.put(MediaStore.Images.Thumbnails.IMAGE_ID,(int)id);
+            values.put(MediaStore.Images.Thumbnails.HEIGHT,thumb.getHeight());
+            values.put(MediaStore.Images.Thumbnails.WIDTH,thumb.getWidth());
+
+            Uri url = cr.insert(MediaStore.Images.Thumbnails.EXTERNAL_CONTENT_URI, values);
+
+            try {
+                OutputStream thumbOut = cr.openOutputStream(url);
+                thumb.compress(Bitmap.CompressFormat.JPEG, 100, thumbOut);
+                thumbOut.close();
+                return thumb;
+            } catch (FileNotFoundException ex) {
+                return null;
+            } catch (IOException ex) {
+                return null;
+            }
+        }
+    }
     private void saveImage()
     {
         Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
@@ -450,6 +535,26 @@ MediaScannerConnection.scanFile(this,
         String imageFileName = "JPEG_" + timeStamp + "_";
         File storageDir = Environment.getExternalStoragePublicDirectory(
                 Environment.DIRECTORY_PICTURES);
+        File imagePath = new File(Environment.getExternalStoragePublicDirectory
+                (Environment.DIRECTORY_PICTURES)+ File.separator + getApplication().getPackageName() + File.separator);
+
+       /* OutputStream fOut = null;
+        File file = new File(imagePath,"GE_"+ System.currentTimeMillis() +".jpg");
+
+        try {
+            fOut = new FileOutputStream(file);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
+
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fOut);
+        try {
+            fOut.flush();
+            fOut.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }*/
+
         File image = null;
         try {
             image = File.createTempFile(
@@ -461,22 +566,81 @@ MediaScannerConnection.scanFile(this,
             e.printStackTrace();
         }
 
+        assert image != null;
+        MediaScannerConnection.scanFile(getApplicationContext(),
+                new String[] { image.toString() }, null,
+                new MediaScannerConnection.OnScanCompletedListener()
+                {
+                    public void onScanCompleted(String path, Uri uri)
+                    {
+                        Log.i("ExternalStorage", "Scanned " + path + ":");
+                        Log.i("ExternalStorage", "-> uri=" + uri);
+                    }
+                });
+
+        /*ContentValues values = new ContentValues();
+        //values.put(MediaStore.Images.Media.TITLE, this.getString(R.string.picture_title));
+        //values.put(MediaStore.Images.Media.DESCRIPTION, this.getString(R.string.picture_description));
+        values.put(MediaStore.Images.Media.DATE_TAKEN, System.currentTimeMillis ());
+        values.put(MediaStore.Images.ImageColumns.BUCKET_ID, file.toString().toLowerCase(Locale.US).hashCode());
+        values.put(MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME, file.getName().toLowerCase(Locale.US));
+        values.put("_data", file.getAbsolutePath());
+
+        ContentResolver cr = getContentResolver();
+        cr.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);*/
+
         // Save a file: path for use with ACTION_VIEW intents
         mCurrentPhotoPath = "file:" + image.getAbsolutePath();
+        Toast.makeText(CameraClass.this, "Saved:" + storageDir, Toast.LENGTH_SHORT).show();
         return image;
+
+         /*OutputStream fOut = null;
+    File file = new File(imagePath,"GE_"+ System.currentTimeMillis() +".jpg");
+
+    try {
+        fOut = new FileOutputStream(file);
+    } catch (FileNotFoundException e) {
+        e.printStackTrace();
+    }
+
+    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fOut);
+    try {
+        fOut.flush();
+        fOut.close();
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+
+    ContentValues values = new ContentValues();
+    values.put(Images.Media.TITLE, this.getString(R.string.picture_title));
+    values.put(Images.Media.DESCRIPTION, this.getString(R.string.picture_description));
+    values.put(Images.Media.DATE_TAKEN, System.currentTimeMillis ());
+    values.put(Images.ImageColumns.BUCKET_ID, file.toString().toLowerCase(Locale.US).hashCode());
+    values.put(Images.ImageColumns.BUCKET_DISPLAY_NAME, file.getName().toLowerCase(Locale.US));
+    values.put("_data", file.getAbsolutePath());
+
+    ContentResolver cr = getContentResolver();
+    cr.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);*/
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data)
     {
-        if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
-            try {
+        if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK)
+        {
+            try
+            {
                 mImageBitmap = MediaStore.Images.Media.getBitmap(this.getContentResolver(), Uri.parse(mCurrentPhotoPath));
                 mImageView.setImageBitmap(mImageBitmap);
-            } catch (IOException e) {
+            }
+            catch (IOException e)
+            {
                 e.printStackTrace();
             }
-        }    }
+        }
+
+        //CapturePhotoUtils.insertImage(getContentResolver(), mImageBitmap);
+    }
 
     TextureView.SurfaceTextureListener textureListener = new TextureView.SurfaceTextureListener()
     {
@@ -485,7 +649,7 @@ MediaScannerConnection.scanFile(this,
         {
             //open your camera here
             openCamera();
-            setupMediaRecorder();
+            //setupMediaRecorder();
         }
 
         @Override
