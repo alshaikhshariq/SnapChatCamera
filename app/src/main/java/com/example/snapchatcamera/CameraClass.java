@@ -74,7 +74,6 @@ public class CameraClass extends AppCompatActivity
         ORIENTATIONS.append(Surface.ROTATION_270, 180);
     }
 
-    private String cameraId;
     protected CameraDevice cameraDevice;
     protected CameraCaptureSession cameraCaptureSessions;
     protected CaptureRequest captureRequest;
@@ -96,12 +95,21 @@ public class CameraClass extends AppCompatActivity
     private CameraCaptureSession mPreviewSession;
     private File mediaStorageDir;
 
+    public static final String CAMERA_FRONT = "1";
+    public static final String CAMERA_BACK = "0";
+    private int cameraId = 0;
     static final int REQUEST_IMAGE_CAPTURE = 1;
     private Bitmap mImageBitmap;
     private String mCurrentPhotoPath;
     private ImageView mImageView;
     private String imageFileName;
     private Bitmap bitmap;
+    private ImageView switchCameraButton;
+    private SurfaceTexture mSurfaceTextureListener;
+    private CameraManager cameraManager;
+    String characteristics;
+    private boolean FLAG = false;
+
 
 
 
@@ -117,6 +125,7 @@ public class CameraClass extends AppCompatActivity
         assert textureView != null;
         textureView.setSurfaceTextureListener(textureListener);
         cameraButton = findViewById(R.id.record_btn_);
+        switchCameraButton = findViewById(R.id.switch_camera_btn_);
         assert cameraButton != null;
 
         cameraButton.setOnClickListener(new View.OnClickListener()
@@ -125,8 +134,20 @@ public class CameraClass extends AppCompatActivity
             public void onClick(View v)
             {
                 takePicture();
+
                 //Intent intent = new Intent();
                 //intent = startActivity(new Intent(MainActivity.this, MyOtherActivity.class));
+            }
+        });
+
+
+
+        switchCameraButton.setOnClickListener(new View.OnClickListener()
+        {
+            @Override
+            public void onClick(View view)
+            {
+                switchCamera();
             }
         });
 
@@ -200,6 +221,48 @@ public class CameraClass extends AppCompatActivity
                 return true;
             }
         });*/
+    }
+
+    void getFrontFacingCameraId(){
+        try {
+            for(final String cameraId : cameraManager.getCameraIdList()){
+                CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraId);
+                int cOrientation = characteristics.get(CameraCharacteristics.LENS_FACING);
+                if(cOrientation == CameraCharacteristics.LENS_FACING_FRONT) return;
+            }
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void switchCamera()
+    {
+        closeCamera();
+        reopenCamera();
+    }
+
+    private void openBackCamera()
+    {
+        openCamera(0);
+    }
+
+    private void openFrontCamera()
+    {
+        openCamera(1);
+    }
+
+    private void reopenCamera()
+    {
+        if (cameraId !=0) {
+            openCamera(0);
+        } else {
+            mTextureView.setSurfaceTextureListener((TextureView.SurfaceTextureListener) mSurfaceTextureListener);
+        }
+    }
+
+    private void closeCamera()
+    {
+        cameraCaptureSessions.close();
     }
 
     private void recordVideo()
@@ -592,6 +655,10 @@ public class CameraClass extends AppCompatActivity
         // Save a file: path for use with ACTION_VIEW intents
         mCurrentPhotoPath = "file:" + image.getAbsolutePath();
         Toast.makeText(CameraClass.this, "Saved:" + storageDir, Toast.LENGTH_SHORT).show();
+
+        Intent intent = new Intent(CameraClass.this, PreviewActivity.class);
+        startActivity(intent);
+
         return image;
 
          /*OutputStream fOut = null;
@@ -648,7 +715,7 @@ public class CameraClass extends AppCompatActivity
         public void onSurfaceTextureAvailable(SurfaceTexture surfaceTexture, int width, int height)
         {
             //open your camera here
-            openCamera();
+            openCamera(1);
             //setupMediaRecorder();
         }
 
@@ -802,20 +869,23 @@ public class CameraClass extends AppCompatActivity
         startBackgroundThread();
         if (textureView.isAvailable())
         {
-            openCamera();
+            openCamera(0);
         } else
             {
             textureView.setSurfaceTextureListener(textureListener);
         }
     }
 
-    private void openCamera()
+    private void openCamera(int cameraId)
     {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         Log.e(TAG, "is camera open");
         try {
-            cameraId = manager.getCameraIdList()[0];
-            CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
+
+            CameraCharacteristics characteristics = null;
+            if (manager != null) {
+                characteristics = manager.getCameraCharacteristics(String.valueOf(cameraId));
+            }
             StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             assert map != null;
             imageDimension = map.getOutputSizes(SurfaceTexture.class)[0];
@@ -824,7 +894,7 @@ public class CameraClass extends AppCompatActivity
                 ActivityCompat.requestPermissions(CameraClass.this, new String[]{Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_CAMERA_PERMISSION);
                 return;
             }
-            manager.openCamera(cameraId, stateCallback, null);
+            manager.openCamera(String.valueOf(cameraId), stateCallback, null);
         } catch (CameraAccessException e)
         {
             e.printStackTrace();
